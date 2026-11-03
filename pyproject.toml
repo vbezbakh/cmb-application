@@ -1,0 +1,32 @@
+[project]
+name = "cmb-application"
+version = "0.1.0"
+description = "FastAPI service built to run well on Kubernetes."
+requires-python = ">=3.14"
+dependencies = [
+    "asyncpg>=0.30",
+    "fastapi>=0.115",
+    "prometheus-client>=0.21",
+    "uvicorn[standard]>=0.32",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28",
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
