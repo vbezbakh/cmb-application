@@ -113,6 +113,10 @@ jobs:
           for env_file in environments/local.yaml environments/staging.yaml; do
             yq -i '.image.tag = strenv(TAG) | .image.digest = strenv(DIGEST)' "$env_file"
           done
+          if git diff --quiet; then
+            echo "::notice::local and staging already run ${TAG::7}; nothing to change."
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "Deploy cmb-application ${TAG::7} to local and staging" -m "Source: $SOURCE"
