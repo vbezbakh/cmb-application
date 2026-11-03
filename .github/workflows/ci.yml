@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  test:
+    name: Lint and test
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgresql://app:app@localhost:5432/app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
+
+  image:
+    name: Build and push image
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        if: github.event_name == 'push'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          # Images are tagged with the full commit SHA only. Environments pin tag + digest,
+          # so "what is running" always maps to exactly one commit.
+          tags: type=sha,format=long,prefix=
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: APP_VERSION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Roll out to local and staging
+    needs: image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: deploy-bump
+      cancel-in-progress: false
+    env:
+      HAS_TOKEN: ${{ secrets.DEPLOY_REPO_TOKEN != '' }}
+    steps:
+      - name: Skip when the deploy token is not configured
+        if: env.HAS_TOKEN != 'true'
+        run: echo "::notice::DEPLOY_REPO_TOKEN is not set; skipping the image bump in cmb-deployment."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.HAS_TOKEN == 'true'
+        with:
+          repository: ${{ github.repository_owner }}/cmb-deployment
+          token: ${{ secrets.DEPLOY_REPO_TOKEN }}
+      - name: Pin the new image in local and staging
+        if: env.HAS_TOKEN == 'true'
+        env:
+          TAG: ${{ github.sha }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        run: |
+          for env_file in environments/local.yaml environments/staging.yaml; do
+            yq -i '.image.tag = strenv(TAG) | .image.digest = strenv(DIGEST)' "$env_file"
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Deploy cmb-application ${TAG::7} to local and staging" -m "Source: $SOURCE"
+          git pull --rebase
+          git push
