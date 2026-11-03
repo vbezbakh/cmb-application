@@ -88,6 +88,16 @@ def test_database_outage_returns_503_with_retry_after(client: TestClient) -> Non
     assert response.headers["retry-after"] == "1"
 
 
+def test_unreachable_read_replica_does_not_stop_the_api(clean_db: None) -> None:
+    settings = make_settings(database_read_url="postgresql://app:app@127.0.0.1:1/app")
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/readyz").status_code == 200
+        created = client.post("/api/v1/items", json={"name": "still works"}).json()
+        # The list endpoint normally reads from the replica; it falls back to the primary.
+        assert client.get("/api/v1/items").json() == [created]
+        assert client.get("/healthz/dependencies").json() == {"primary": "ok"}
+
+
 def test_components_only_serve_their_own_routes(clean_db: None) -> None:
     with TestClient(create_app(make_settings(component="webhooks"))) as webhooks_only:
         assert webhooks_only.get("/api/v1/items").status_code == 404

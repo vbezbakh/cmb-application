@@ -29,7 +29,11 @@ TRANSIENT_DB_ERRORS: tuple[type[BaseException], ...] = (
     asyncpg.AdminShutdownError,
     asyncpg.TooManyConnectionsError,
     asyncpg.ReadOnlySQLTransactionError,
+    # PgBouncer reports "can't reach the server behind me" as a protocol violation (08P01).
+    asyncpg.ProtocolViolationError,
 )
+
+REPLICA_RETRY_SECONDS = 30.0
 
 
 class Database:
@@ -37,20 +41,35 @@ class Database:
         self._settings = settings
         self.primary: asyncpg.Pool | None = None
         self.replica: asyncpg.Pool | None = None
+        self._replica_retry: asyncio.Task[None] | None = None
 
     async def connect(self) -> None:
-        """Open the pools, retrying while the database comes up (e.g. right after a failover)."""
+        """Open the primary pool (required) and the read-replica pool (optional).
+
+        Losing the read replicas must never take the API down: if the replica pool can't be
+        opened, reads are served by the primary and the replica is retried in the background.
+        """
+        await self._connect_primary()
+        if self._settings.database_read_url:
+            try:
+                self.replica = await self._create_pool(self._settings.database_read_url)
+            except TRANSIENT_DB_ERRORS as exc:
+                log.warning(
+                    "read replica unavailable, serving reads from the primary",
+                    extra={"error": repr(exc), "retry_in_seconds": REPLICA_RETRY_SECONDS},
+                )
+                self._replica_retry = asyncio.create_task(self._retry_replica())
+        log.info("database pools ready", extra={"read_replica": self.replica is not None})
+
+    async def _connect_primary(self) -> None:
+        """Retry while the primary comes up (e.g. a pod starting right after a failover)."""
         deadline = time.monotonic() + self._settings.db_startup_timeout_seconds
         delay = 0.5
         while True:
             try:
                 self.primary = await self._create_pool(self._settings.database_url)
-                if self._settings.database_read_url:
-                    self.replica = await self._create_pool(self._settings.database_read_url)
-                log.info("database pools ready", extra={"read_replica": self.replica is not None})
                 return
             except TRANSIENT_DB_ERRORS as exc:
-                await self.close()
                 if time.monotonic() + delay > deadline:
                     raise
                 log.warning(
@@ -73,7 +92,19 @@ class Database:
             server_settings={"application_name": f"cmb-{s.component}"},
         )
 
+    async def _retry_replica(self) -> None:
+        while self.replica is None:
+            await asyncio.sleep(REPLICA_RETRY_SECONDS)
+            try:
+                self.replica = await self._create_pool(self._settings.database_read_url or "")
+                log.info("read replica pool connected")
+            except TRANSIENT_DB_ERRORS as exc:
+                log.warning("read replica still unavailable", extra={"error": repr(exc)})
+
     async def close(self) -> None:
+        if self._replica_retry is not None:
+            self._replica_retry.cancel()
+            self._replica_retry = None
         for pool in (self.replica, self.primary):
             if pool is not None:
                 try:
