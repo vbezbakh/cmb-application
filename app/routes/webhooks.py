@@ -71,5 +71,8 @@ async def payment_webhook(request: Request, db: DB, settings: AppSettings) -> di
 
     outcome = "accepted" if inserted else "duplicate"
     WEBHOOK_EVENTS.labels(outcome).inc()
-    log.info("webhook stored", extra={"event_id": event_id, "event_type": event_type, "outcome": outcome})
+    log.info(
+        "webhook stored",
+        extra={"event_id": event_id, "event_type": event_type, "outcome": outcome},
+    )
     return {"status": outcome}

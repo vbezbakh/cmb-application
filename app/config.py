@@ -66,7 +66,7 @@ class Settings:
     batch_statement_timeout_seconds: float = 1800.0
 
     @classmethod
-    def from_env(cls, component: str | None = None) -> "Settings":
+    def from_env(cls, component: str | None = None) -> Settings:
         database_url = _str("DATABASE_URL")
         if not database_url:
             raise ConfigError("missing required environment variable DATABASE_URL")

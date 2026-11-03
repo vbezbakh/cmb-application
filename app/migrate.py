@@ -24,8 +24,13 @@ MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 LOCK_KEY = 7_291_004_102
 
 
+def load_migrations(migrations_dir: Path) -> list[tuple[str, str]]:
+    return [(path.stem, path.read_text()) for path in sorted(migrations_dir.glob("*.sql"))]
+
+
 async def migrate(database_url: str, migrations_dir: Path = MIGRATIONS_DIR) -> list[str]:
     """Apply pending migrations and return the versions applied by this call."""
+    migrations = await asyncio.to_thread(load_migrations, migrations_dir)
     conn = await asyncpg.connect(
         database_url,
         timeout=30,
@@ -45,13 +50,13 @@ async def migrate(database_url: str, migrations_dir: Path = MIGRATIONS_DIR) -> l
                 """
             )
             done = {r["version"] for r in await conn.fetch("SELECT version FROM schema_migrations")}
-            for path in sorted(migrations_dir.glob("*.sql")):
-                if path.stem in done:
+            for version, sql in migrations:
+                if version in done:
                     continue
-                log.info("applying migration", extra={"version": path.stem})
-                await conn.execute(path.read_text())
-                await conn.execute("INSERT INTO schema_migrations (version) VALUES ($1)", path.stem)
-                applied.append(path.stem)
+                log.info("applying migration", extra={"version": version})
+                await conn.execute(sql)
+                await conn.execute("INSERT INTO schema_migrations (version) VALUES ($1)", version)
+                applied.append(version)
     finally:
         await conn.close()
     return applied

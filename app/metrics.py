@@ -37,11 +37,16 @@ DB_UNAVAILABLE = Counter(
     "db_unavailable_errors_total",
     "Requests answered with 503 because the database could not be reached.",
 )
-APP_INFO = Gauge("app_info", "Always 1; labels describe the running build.", ["version", "component"])
+APP_INFO = Gauge(
+    "app_info", "Always 1; labels describe the running build.", ["version", "component"]
+)
 
 
 class PoolCollector(Collector):
-    """Reports pool usage at scrape time. Pool exhaustion shows up here before it shows up as latency."""
+    """Reports pool usage at scrape time.
+
+    Pool exhaustion shows up here before it shows up as latency.
+    """
 
     def __init__(self) -> None:
         self.db: Database | None = None

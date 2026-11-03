@@ -70,7 +70,9 @@ async def run(settings: Settings, day: date) -> int | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m app.batch", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(
+        prog="python -m app.batch", description="Summarise one UTC day of payment events."
+    )
     parser.add_argument(
         "--date",
         type=date.fromisoformat,

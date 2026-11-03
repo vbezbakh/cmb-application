@@ -45,9 +45,7 @@ async def get_item(item_id: int, db: DB) -> ItemOut:
 
 
 @router.get("")
-async def list_items(
-    db: DB, limit: Annotated[int, Query(ge=1, le=100)] = 20
-) -> list[ItemOut]:
+async def list_items(db: DB, limit: Annotated[int, Query(ge=1, le=100)] = 20) -> list[ItemOut]:
     async with db.connection(readonly=True) as conn:
         rows = await conn.fetch(
             "SELECT id, name, created_at FROM items ORDER BY id DESC LIMIT $1", limit

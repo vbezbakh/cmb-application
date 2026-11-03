@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date
+from datetime import UTC, date, datetime
 
 import asyncpg
 
@@ -17,12 +17,12 @@ async def _seed_events() -> None:
     try:
         await conn.executemany(
             "INSERT INTO payment_events (event_id, event_type, payload, received_at) "
-            "VALUES ($1, $2, '{}'::jsonb, $3::timestamptz)",
+            "VALUES ($1, $2, '{}'::jsonb, $3)",
             [
-                ("evt_a", "payment.succeeded", "2026-11-01T00:00:00Z"),
-                ("evt_b", "payment.succeeded", "2026-11-01T23:59:59Z"),
-                ("evt_c", "payment.refunded", "2026-11-01T12:00:00Z"),
-                ("evt_d", "payment.succeeded", "2026-11-02T00:00:00Z"),  # next day
+                ("evt_a", "payment.succeeded", datetime(2026, 11, 1, 0, 0, 0, tzinfo=UTC)),
+                ("evt_b", "payment.succeeded", datetime(2026, 11, 1, 23, 59, 59, tzinfo=UTC)),
+                ("evt_c", "payment.refunded", datetime(2026, 11, 1, 12, 0, 0, tzinfo=UTC)),
+                ("evt_d", "payment.succeeded", datetime(2026, 11, 2, 0, 0, 0, tzinfo=UTC)),
             ],
         )
     finally:
