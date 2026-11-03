@@ -6,7 +6,11 @@ import sys
 from datetime import UTC, datetime
 
 # Attributes every LogRecord has; anything else on a record came from `extra=` and is logged.
-_STANDARD_ATTRS = frozenset(vars(logging.LogRecord("", 0, "", 0, "", (), None))) | {"message"}
+# uvicorn also attaches `color_message` (the same text with terminal colour codes).
+_STANDARD_ATTRS = frozenset(vars(logging.LogRecord("", 0, "", 0, "", (), None))) | {
+    "message",
+    "color_message",
+}
 
 
 class JsonFormatter(logging.Formatter):
