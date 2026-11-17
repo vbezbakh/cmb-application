@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- build: resolve dependencies from the lockfile into a standalone virtualenv ----
-FROM python:3.14-slim AS build
+FROM python:3.15-slim AS build
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.6 /uv /usr/local/bin/uv
 
@@ -17,7 +17,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # ---- runtime: no build tools, no package manager cache, non-root ----
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 ARG APP_VERSION=dev
 ENV PATH=/opt/venv/bin:$PATH \
